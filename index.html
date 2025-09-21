@@ -1,6 +1,145 @@
 <!DOCTYPE html>
 <html>
-  <body>
-    <h1>Hello World!</h1>
-  </body>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Li Facheng's Blog</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    
+    .content-preview {
+      border: 1px solid #ddd;
+      padding: 15px;
+      margin: 10px 0;
+      max-height: 300px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+    }
+    
+    .file-link {
+      color: #0366d6;
+      text-decoration: none;
+    }
+    
+    .file-link:hover {
+      text-decoration: underline;
+    }
+    
+    .loading {
+      color: #666;
+      font-style: italic;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="content"></div>
+
+  <script>
+    const USERNAME = "SakuraLaurel";
+    const REPO = "SakuraLaurel.github.io";
+    const GITHUB_API_BASE = `https://api.github.com/repos/${USERNAME}/${REPO}/contents`;
+    
+    async function fetchDirectoryContents(path = '') {
+      try {
+        const response = await fetch(`${GITHUB_API_BASE}/${path}`);
+        const data = await response.json();
+        return Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.error('获取目录内容失败:', error);
+        return [];
+      }
+    }
+    
+    async function fetchFileContent(path) {
+      try {
+        const response = await fetch(`https://raw.githubusercontent.com/${USERNAME}/${REPO}/master/${path}`);
+        const content = await response.text();
+        return content;
+      } catch (error) {
+        console.error('获取文件内容失败:', error);
+        return '无法加载文件内容';
+      }
+    }
+    
+    function createFileSection(fileName, filePath, content) {
+      const section = document.createElement('div');
+      
+      // 创建二级标题和链接
+      const heading = document.createElement('h2');
+      const link = document.createElement('a');
+      link.href = `https://github.com/${USERNAME}/${REPO}/blob/master/${filePath}`;
+      link.textContent = fileName;
+      link.className = 'file-link';
+      link.target = '_blank';
+      heading.appendChild(link);
+      
+      // 创建内容预览框
+      const preview = document.createElement('div');
+      preview.className = 'content-preview';
+      
+      if (fileName.endsWith('.md')) {
+        // 对于Markdown文件，渲染为HTML
+        preview.innerHTML = marked.parse(content);
+      } else {
+        // 对于其他文件，显示纯文本
+        preview.textContent = content;
+      }
+      
+      section.appendChild(heading);
+      section.appendChild(preview);
+      return section;
+    }
+    
+    async function loadAllContent() {
+      const contentDiv = document.getElementById('content');
+      contentDiv.innerHTML = '<div class="loading">正在加载内容...</div>';
+      
+      try {
+        // 获取根目录内容
+        const rootContents = await fetchDirectoryContents();
+        const contentHtml = [];
+        
+        for (const item of rootContents) {
+          if (item.type === 'dir') {
+            // 处理文件夹
+            contentHtml.push(`<h1>${item.name}</h1>`);
+            
+            const dirContents = await fetchDirectoryContents(item.name);
+            for (const file of dirContents) {
+              if (file.type === 'file' && !file.name.startsWith('.')) {
+                const content = await fetchFileContent(file.path);
+                const section = createFileSection(file.name, file.path, content);
+                contentHtml.push(section.outerHTML);
+              }
+            }
+          } else if (item.type === 'file' && !item.name.startsWith('.') && item.name !== 'index.html' && item.name !== 'LICENSE') {
+            // 处理根目录下的文件（排除系统文件）
+            const content = await fetchFileContent(item.path);
+            const section = createFileSection(item.name, item.path, content);
+            contentHtml.push(section.outerHTML);
+          }
+        }
+        
+        contentDiv.innerHTML = contentHtml.join('');
+        
+      } catch (error) {
+        console.error('加载内容失败:', error);
+        contentDiv.innerHTML = '<div>加载内容失败，请稍后重试。</div>';
+      }
+    }
+    
+    // 页面加载完成后执行
+    document.addEventListener('DOMContentLoaded', loadAllContent);
+  </script>
+
+</body>
+
 </html>
