@@ -1,3 +1,7 @@
+if vim.fn.has("nvim-0.12") == 0 then
+  error("This config requires Neovim 0.12+")
+end
+
 -- Bootstrap lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"                                                          
 if not vim.uv.fs_stat(lazypath) then
@@ -406,6 +410,9 @@ require("lazy").setup({
         filetypes = {
           python = true,
           cpp = true,
+          c = true,
+          rust = true,
+          lua = true,
           ["*"] = false,
         },
 
@@ -419,3 +426,16 @@ require("lazy").setup({
   },
 })
 
+vim.api.nvim_create_autocmd("User", {
+  pattern = "BlinkCmpMenuOpen",
+  callback = function()
+    vim.b.copilot_suggestion_hidden = true
+  end,
+})
+
+vim.api.nvim_create_autocmd("User", {
+  pattern = "BlinkCmpMenuClose",
+  callback = function()
+    vim.b.copilot_suggestion_hidden = false
+  end,
+})
