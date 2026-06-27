@@ -1,15 +1,25 @@
 -- Bootstrap lazy.nvim
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-
-if not vim.loop.fs_stat(lazypath) then
-  vim.fn.system({
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"                                                          
+if not vim.uv.fs_stat(lazypath) then
+  local lazyrepo = "https://github.com/folke/lazy.nvim.git"
+  local out = vim.fn.system({
     "git",
     "clone",
     "--filter=blob:none",
-    "https://github.com/folke/lazy.nvim.git",
     "--branch=stable",
+    lazyrepo,
     lazypath,
   })
+
+  if vim.v.shell_error ~= 0 then
+    vim.api.nvim_echo({
+      { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
+      { out, "WarningMsg" },
+      { "\nPress any key to exit..." },
+    }, true, {})
+    vim.fn.getchar()
+    os.exit(1)
+  end
 end
 
 vim.opt.rtp:prepend(lazypath)
@@ -52,16 +62,28 @@ vim.diagnostic.config({
   virtual_text = true,
   severity_sort = true,
   float = {
-    border = "rounded",
-    source = "if_many",
+    source = true,
   },
 })
 
 -- Keymaps
 vim.keymap.set("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "Find files" })
 vim.keymap.set("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "Live grep" })
-vim.keymap.set("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { desc = "Buffers" })
 vim.keymap.set("n", "<leader>e", "<cmd>Oil<cr>", { desc = "File explorer" })
+
+vim.keymap.set("n", "<leader>r", function()
+  local file = vim.fn.expand("%:p")
+  local root = vim.fs.root(0, { "pyproject.toml", ".git" }) or vim.fn.getcwd()
+
+  vim.cmd("botright 12split")
+  vim.cmd(
+    "terminal cd "
+      .. vim.fn.shellescape(root)
+      .. " && uv run python "
+      .. vim.fn.shellescape(file)
+  )
+  vim.cmd("startinsert")
+end, { desc = "Run current Python file with uv" })
 
 -- LSP keymaps
 vim.api.nvim_create_autocmd("LspAttach", {
@@ -99,90 +121,129 @@ require("lazy").setup({
 
   -- UI / productivity
   { "nvim-tree/nvim-web-devicons" },
-  { "windwp/nvim-autopairs", config = true },
-  { "folke/which-key.nvim", config = true },
-  { "nvim-lualine/lualine.nvim", config = true },
-  { "lewis6991/gitsigns.nvim", config = true },
-
-  {
-    "stevearc/oil.nvim",
-    config = true,
-  },
+  { "windwp/nvim-autopairs", opts = {} },
+  { "folke/which-key.nvim", opts = {} },
+  { "nvim-lualine/lualine.nvim", opts = {} },
+  { "lewis6991/gitsigns.nvim", opts = {} },
+  { "stevearc/oil.nvim", opts = {} },
 
   {
     "nvim-telescope/telescope.nvim",
     dependencies = {
       "nvim-lua/plenary.nvim",
     },
-    config = function()
-      require("telescope").setup({})
-    end,
+    opts = {},
   },
 
-  -- Treesitter
   {
-    "nvim-treesitter/nvim-treesitter",
-    branch = "master",
+    "tpope/vim-fugitive",
+    cmd = {
+      "Git",
+      "G",
+      "Gdiffsplit",
+      "Gread",
+      "Gwrite",
+      "Ggrep",
+      "GMove",
+      "GDelete",
+      "GBrowse",
+    },
+  },
+
+  {
+    "romus204/tree-sitter-manager.nvim",
     lazy = false,
-    build = ":TSUpdate",
+    priority = 1000,
     config = function()
-      require("nvim-treesitter.configs").setup({
+      require("tree-sitter-manager").setup({
+        parser_dir = vim.fn.stdpath("data") .. "/site/parser",
+        query_dir = vim.fn.stdpath("data") .. "/site/queries",
+
         ensure_installed = {
-          "bash",
-          "c",
-          "cpp",
-          "cmake",
+          "rust",
           "python",
+          "cpp",
+        },
+
+        auto_install = false,
+
+        highlight = {
+          "rust",
+          "python",
+          "cpp",
+        },
+
+        noauto_install = {
+          "c",
+          "lua",
           "markdown",
           "markdown_inline",
-          "json",
-          "lua",
-          "toml",
-          "yaml",
           "query",
+          "vim",
+          "vimdoc",
         },
-        highlight = { enable = true },
-        indent = { enable = true },
+
+        nerdfont = true,
       })
     end,
   },
 
-  -- Completion: blink.cmp
-  -- blink.cmp 官方文档支持 lazy.nvim 安装方式。版本稳定性 方面，建议先用 v1。
-  -- https://cmp.saghen.dev/
+  -- Completion
   {
     "saghen/blink.cmp",
     version = "1.*",
-    dependencies = {
-      "rafamadriz/friendly-snippets",
-    },
     opts = {
       keymap = {
         preset = "super-tab",
       },
-      appearance = {
-        nerd_font_variant = "mono",
-      },
+
       completion = {
+        -- 有 Copilot ghost text 时，不自动弹 blink 菜单。
+        menu = {
+          auto_show = function() 
+            local ok, suggestion = pcall(require, "copilot.suggestion")
+            return (not ok) or (not suggestion.is_visible())
+          end,
+        },
+
+        list = {
+          selection = {
+            preselect = true,
+            auto_insert = false,
+          },
+        },
+
         documentation = {
           auto_show = true,
           auto_show_delay_ms = 200,
         },
+
+        -- 避免 blink 自己的 ghost text 和 Copilot ghost text 视觉冲突。
+        ghost_text = {
+          enabled = false,
+        },
       },
+
       signature = {
         enabled = true,
         window = {
           show_documentation = false,
         },
       },
+
       sources = {
         default = {
           "lsp",
           "path",
-          "snippets",
           "buffer",
         },
+        providers = {
+          snippets = {
+            enabled = false,
+          },
+        },
       },
+
       fuzzy = {
         implementation = "prefer_rust_with_warning",
       },
@@ -207,7 +268,7 @@ require("lazy").setup({
           "--clang-tidy",
           "--completion-style=detailed",
           "--header-insertion=iwyu",
-          "--compile-commands-dir=build"
+          "--compile-commands-dir=build",
         },
         root_markers = {
           "compile_commands.json",
@@ -281,41 +342,76 @@ require("lazy").setup({
       if debugpy ~= "" then
         require("dap-python").setup(debugpy)
       else
-        vim.notify("debugpy-adapter not found. Run: pipx install debugpy", vim.log.levels.WARN)
+        vim.notify("debugpy-adapter not found. Run: uv tool install debugpy", vim.log.levels.WARN)
       end
     end,
   },
 
-  -- GitHub Copilot
+  -- GitHub Copilot: 只保留 inline suggestion + NES
   {
     "zbirenbaum/copilot.lua",
+    dependencies = {
+      {
+        "copilotlsp-nvim/copilot-lsp",
+        init = function()
+          vim.g.copilot_nes_debounce = 500
+        end,
+        config = function()
+          require("copilot-lsp").setup({
+            nes = {
+              move_count_threshold = 10,
+            },
+          })
+        end,
+      },
+    },
     cmd = "Copilot",
     event = "InsertEnter",
-    opts = {
-      panel = {
-        enabled = false,
-      },
-      suggestion = {
-        enabled = true,
-        auto_trigger = true,
-        hide_during_completion = true,
-        keymap = {
-          accept = "<M-l>",
-          accept_word = "<M-w>",
-          accept_line = "<M-j>",
-          next = "<M-]>",
-          prev = "<M-[>",
-          dismiss = "<C-]>",
+    config = function()
+      require("copilot").setup({
+        -- 禁用 Copilot panel，只保留自动补全和 NES。
+        panel = {
+          enabled = false,
         },
-      },
-      filetypes = {
-        python = true,
-        cpp = true,
-        help = false,
-        ["."] = false,
-      },
-      copilot_node_command = "node",
-    },
+
+        -- Insert mode inline suggestion。
+        suggestion = {
+          enabled = true,
+          auto_trigger = true,
+          hide_during_completion = true,
+          debounce = 75,
+          keymap = {
+            accept = "<M-l>",
+            accept_word = false,
+            accept_line = false,
+            next = "<M-]>",
+            prev = "<M-[>",
+            dismiss = "<C-]>",
+            toggle_auto_trigger = false,
+          },
+        },
+
+        -- Normal mode Next Edit Suggestion。
+        -- 不绑定 Tab，避免和 blink.cmp 抢键。
+        nes = {
+          enabled = true,
+          auto_trigger = true,
+          keymap = {
+            accept_and_goto = "<leader>cn",
+            accept = false,
+            dismiss = "<leader>cd",
+          },
+        },
+
+        filetypes = {
+          python = true,
+          cpp = true,
+          ["*"] = false,
+        },
+
+        copilot_node_command = "node",
+      })
+    end,
   },
 }, {
   git = {
@@ -323,17 +419,3 @@ require("lazy").setup({
   },
 })
 
--- Hide Copilot ghost text when blink.cmp menu is open
-vim.api.nvim_create_autocmd("User", {
-  pattern = "BlinkCmpMenuOpen",
-  callback = function()
-    vim.b.copilot_suggestion_hidden = true
-  end,
-})
-
-vim.api.nvim_create_autocmd("User", {
-  pattern = "BlinkCmpMenuClose",
-  callback = function()
-    vim.b.copilot_suggestion_hidden = false
-  end,
-})
