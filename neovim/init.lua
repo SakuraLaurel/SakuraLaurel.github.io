@@ -217,11 +217,6 @@ require("lazy").setup({
           },
         },
 
-        documentation = {
-          auto_show = true,
-          auto_show_delay_ms = 200,
-        },
-
         -- 避免 blink 自己的 ghost text 和 Copilot ghost text 视觉冲突。
         ghost_text = {
           enabled = false,
