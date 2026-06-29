@@ -435,3 +435,14 @@ vim.api.nvim_create_autocmd("User", {
     vim.b.copilot_suggestion_hidden = false
   end,
 })
+vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+  callback = function()
+    vim.lsp.buf.document_highlight()
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+  callback = function()
+    vim.lsp.buf.clear_references()
+  end,
+})
