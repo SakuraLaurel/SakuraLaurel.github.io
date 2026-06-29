@@ -80,6 +80,7 @@ vim.keymap.set("n", "<leader>r", function()
   local root = vim.fs.root(0, { "pyproject.toml", ".git" }) or vim.fn.getcwd()
 
   vim.cmd("botright 12split")
+  vim.cmd("silent update")
   vim.cmd(
     "terminal cd "
       .. vim.fn.shellescape(root)
