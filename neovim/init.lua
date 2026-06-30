@@ -3,7 +3,7 @@ if vim.fn.has("nvim-0.12") == 0 then
 end
 
 -- Bootstrap lazy.nvim
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"                                                          
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.uv.fs_stat(lazypath) then
   local lazyrepo = "https://github.com/folke/lazy.nvim.git"
   local out = vim.fn.system({
@@ -90,11 +90,25 @@ vim.keymap.set("n", "<leader>r", function()
   vim.cmd("startinsert")
 end, { desc = "Run current Python file with uv" })
 
--- LSP keymaps
+-- LSP helpers
+local lsp_document_highlight_group = vim.api.nvim_create_augroup("LspDocumentHighlight", {
+  clear = true,
+})
+
+local function buf_supports_lsp_method(bufnr, method)
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+    if client:supports_method(method, bufnr) then
+      return true
+    end
+  end
+
+  return false
+end
+
+-- LSP keymaps / per-buffer features
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(event)
-    local opts = { buffer = event.buf }
-
+    local opts = { buf = event.buf }
     vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
     vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
     vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
@@ -105,8 +119,74 @@ vim.api.nvim_create_autocmd("LspAttach", {
     vim.keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts)
 
     local client = vim.lsp.get_client_by_id(event.data.client_id)
-    if client and client.server_capabilities.inlayHintProvider then
+    if not client then
+      return
+    end
+
+    if client.name == "copilot" then
+      vim.lsp.inline_completion.enable(true, {
+        bufnr = event.buf,
+      })
+
+      vim.keymap.set("i", "<M-l>", function()
+        vim.lsp.inline_completion.get({ bufnr = event.buf })
+        return ""
+      end, {
+        buf = event.buf,
+        expr = true,
+        desc = "Accept Copilot inline completion",
+      })
+
+      vim.keymap.set("i", "<M-]>", function()
+        vim.lsp.inline_completion.select({
+          bufnr = event.buf,
+          count = 1,
+        })
+      end, {
+        buffer = event.buf,
+        desc = "Next Copilot inline completion",
+      })
+
+      vim.keymap.set("i", "<M-[>", function()
+        vim.lsp.inline_completion.select({
+          bufnr = event.buf,
+          count = -1,
+        })
+      end, {
+        buffer = event.buf,
+        desc = "Previous Copilot inline completion",
+      })
+    end
+
+    -- Inlay hints
+    if client:supports_method("textDocument/inlayHint", event.buf) then
       vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
+    end
+
+    -- Document highlight:
+    -- 只在当前 buffer 至少有一个 LSP 支持 textDocument/documentHighlight 时注册。
+    -- 这样可以避免 Copilot LSP / 无 LSP buffer 触发 CursorHold 报错。
+    if client:supports_method("textDocument/documentHighlight", event.buf) then
+      vim.api.nvim_clear_autocmds({
+        group = lsp_document_highlight_group,
+        buf = event.buf,
+      })
+      vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+        group = lsp_document_highlight_group,
+        buf = event.buf,
+        callback = function(args)
+          if buf_supports_lsp_method(args.buf, "textDocument/documentHighlight") then
+            vim.lsp.buf.document_highlight()
+          end
+        end,
+      })
+      vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufLeave" }, {
+        group = lsp_document_highlight_group,
+        buffer = event.buf,
+        callback = function()
+          vim.lsp.buf.clear_references()
+        end,
+      })
     end
   end,
 })
@@ -203,12 +283,8 @@ require("lazy").setup({
       },
 
       completion = {
-        -- 有 Copilot ghost text 时，不自动弹 blink 菜单。
         menu = {
-          auto_show = function() 
-            local ok, suggestion = pcall(require, "copilot.suggestion")
-            return (not ok) or (not suggestion.is_visible())
-          end,
+          auto_show = true,
         },
 
         list = {
@@ -218,7 +294,7 @@ require("lazy").setup({
           },
         },
 
-        -- 避免 blink 自己的 ghost text 和 Copilot ghost text 视觉冲突。
+        -- 避免 blink 自己的 ghost text 和 LSP inline completion 视觉冲突。
         ghost_text = {
           enabled = false,
         },
@@ -296,10 +372,40 @@ require("lazy").setup({
         capabilities = capabilities,
       })
 
+      -- Copilot LSP:
+      -- 给 Neovim 原生 inline completion 和 sidekick.nvim NES 使用。
+      vim.lsp.config("copilot", {
+        cmd = {
+          "copilot-language-server",
+          "--stdio",
+        },
+        root_markers = {
+          ".git",
+        },
+        filetypes = {
+          "python",
+          "cpp",
+          "c",
+          "rust",
+          "lua",
+        },
+        init_options = {
+          editorInfo = {
+            name = "Neovim",
+            version = tostring(vim.version()),
+          },
+          editorPluginInfo = {
+            name = "Neovim",
+            version = tostring(vim.version()),
+          },
+        },
+      })
+
       vim.lsp.enable({
         "clangd",
         "pyright",
         "ruff",
+        "copilot",
       })
     end,
   },
@@ -347,102 +453,98 @@ require("lazy").setup({
     end,
   },
 
-  -- GitHub Copilot: 只保留 inline suggestion + NES
   {
-    "zbirenbaum/copilot.lua",
-    dependencies = {
-      {
-        "copilotlsp-nvim/copilot-lsp",
-        init = function()
-          vim.g.copilot_nes_debounce = 500
+    "iamcco/markdown-preview.nvim",
+    cmd = { "MarkdownPreviewToggle", "MarkdownPreview", "MarkdownPreviewStop" },
+    build = "cd app && npm install",
+    init = function()
+      vim.g.mkdp_filetypes = { "markdown" }
+    end,
+    ft = { "markdown" },
+  },
+
+  -- AI / NES
+  {
+    "folke/sidekick.nvim",
+    event = {
+      "BufReadPost",
+      "BufNewFile",
+    },
+    opts = {
+      nes = {
+        debounce = 800,
+
+        trigger = {
+          events = { "ModeChanged i:n", "TextChanged", "User SidekickNesDone" }
+        },
+
+        enabled = function(buf)
+          local enabled_filetypes = {
+            python = true,
+            cpp = true,
+            c = true,
+            rust = true,
+            lua = true,
+          }
+
+          return vim.g.sidekick_nes ~= false
+            and vim.b[buf].sidekick_nes ~= false
+            and enabled_filetypes[vim.bo[buf].filetype] == true
         end,
-        config = function()
-          require("copilot-lsp").setup({
-            nes = {
-              move_count_threshold = 10,
-            },
-          })
-        end,
+
+        diff = {
+          inline = "words",
+          show = "always",
+        },
+
+        signs = false,
+        jumplist = false,
+      },
+
+      cli = {
+        picker = "telescope",
       },
     },
-    cmd = "Copilot",
-    event = "InsertEnter",
-    config = function()
-      require("copilot").setup({
-        -- 禁用 Copilot panel，只保留自动补全和 NES。
-        panel = {
-          enabled = false,
-        },
-
-        -- Insert mode inline suggestion。
-        suggestion = {
-          enabled = true,
-          auto_trigger = true,
-          hide_during_completion = true,
-          debounce = 75,
-          keymap = {
-            accept = "<M-l>",
-            accept_word = false,
-            accept_line = false,
-            next = "<M-]>",
-            prev = "<M-[>",
-            dismiss = "<C-]>",
-            toggle_auto_trigger = false,
-          },
-        },
-
-        -- Normal mode Next Edit Suggestion。
-        -- 不绑定 Tab，避免和 blink.cmp 抢键。
-        nes = {
-          enabled = true,
-          auto_trigger = true,
-          keymap = {
-            accept_and_goto = "<leader>cn",
-            accept = false,
-            dismiss = "<leader>cd",
-          },
-        },
-
-        filetypes = {
-          python = true,
-          cpp = true,
-          c = true,
-          rust = true,
-          lua = true,
-          ["*"] = false,
-        },
-
-        copilot_node_command = "node",
-      })
-    end,
+    keys = {
+      {
+        "<leader>nj",
+        function()
+          require("sidekick.nes").jump()
+        end,
+        desc = "Jump to Next Edit Suggestion",
+      },
+      {
+        "<leader>na",
+        function()
+          require("sidekick.nes").apply()
+        end,
+        desc = "Apply Next Edit Suggestion",
+      },
+      {
+        "<leader>nu",
+        function()
+          require("sidekick.nes").update()
+        end,
+        desc = "Update Next Edit Suggestion",
+      },
+      {
+        "<leader>nd",
+        function()
+          require("sidekick.nes").clear()
+        end,
+        desc = "Dismiss Next Edit Suggestion",
+      },
+      {
+        "<leader>nt",
+        function()
+          require("sidekick.nes").toggle()
+        end,
+        desc = "Toggle Next Edit Suggestion",
+      },
+    },
   },
 }, {
   git = {
     timeout = 300,
   },
-})
-
-vim.api.nvim_create_autocmd("User", {
-  pattern = "BlinkCmpMenuOpen",
-  callback = function()
-    vim.b.copilot_suggestion_hidden = true
-  end,
-})
-
-vim.api.nvim_create_autocmd("User", {
-  pattern = "BlinkCmpMenuClose",
-  callback = function()
-    vim.b.copilot_suggestion_hidden = false
-  end,
-})
-vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-  callback = function()
-    vim.lsp.buf.document_highlight()
-  end,
-})
-
-vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-  callback = function()
-    vim.lsp.buf.clear_references()
-  end,
 })
