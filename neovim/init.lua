@@ -27,6 +27,7 @@ if not vim.uv.fs_stat(lazypath) then
 end
 
 vim.opt.rtp:prepend(lazypath)
+vim.opt.maxmempattern = 2000000
 
 -- Leader keys
 vim.g.mapleader = " "
@@ -429,8 +430,30 @@ require("lazy").setup({
           "ruff_organize_imports",
           "ruff_format",
         },
+        json = { "prettier" },
+      },
+
+      formatters = {
+        prettier = {
+          options = {
+            ft_parsers = {
+              json = "json",
+            },
+            ext_parsers = {
+              xcs = "json",
+            },
+          },
+        },
       },
     },
+
+    init = function()
+      vim.filetype.add({
+        extension = {
+          xcs = "json",
+        },
+      })
+    end,
   },
 
   -- DAP
