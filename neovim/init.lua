@@ -479,11 +479,20 @@ require("lazy").setup({
   {
     "iamcco/markdown-preview.nvim",
     cmd = { "MarkdownPreviewToggle", "MarkdownPreview", "MarkdownPreviewStop" },
-    build = "cd app && npm install",
+    build = "cd app && npm install && (git restore yarn.lock 2>/dev/null || rm -f yarn.lock)",
     init = function()
       vim.g.mkdp_filetypes = { "markdown" }
     end,
     ft = { "markdown" },
+  },
+  {
+    "goerz/jupytext.nvim",
+    version = "0.2.0",
+    opts = {
+      format = "py:percent",
+      update = true,
+      autosync = true,
+    },
   },
 
   -- AI / NES
