@@ -1,582 +1,264 @@
-if vim.fn.has("nvim-0.12") == 0 then
-  error("This config requires Neovim 0.12+")
+vim.loader.enable()
+vim.g.mapleader = ' '
+vim.g.maplocalleader = ' '
+
+local function each(t, f) vim.iter(t):each(f) end
+
+local function map(specs, opts)
+    each(specs, function(s)
+        vim.keymap.set(s[1], s[2], s[3], vim.tbl_extend('force', { desc = s[4] }, opts or {}))
+    end)
 end
 
--- Bootstrap lazy.nvim
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath) then
-  local lazyrepo = "https://github.com/folke/lazy.nvim.git"
-  local out = vim.fn.system({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    "--branch=stable",
-    lazyrepo,
-    lazypath,
-  })
+local function gh(repo) return 'https://github.com/' .. repo end
 
-  if vim.v.shell_error ~= 0 then
-    vim.api.nvim_echo({
-      { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
-      { out, "WarningMsg" },
-      { "\nPress any key to exit..." },
-    }, true, {})
-    vim.fn.getchar()
-    os.exit(1)
-  end
-end
+each({
+    number = true,
+    relativenumber = true,
+    signcolumn = 'yes',
+    cursorline = true,
+    termguicolors = true,
+    background = 'light',
+    mouse = 'a',
+    undofile = true,
+    ignorecase = true,
+    smartcase = true,
+    splitright = true,
+    splitbelow = true,
+    scrolloff = 8,
+    expandtab = true,
+    shiftwidth = 4,
+    tabstop = 4,
+    updatetime = 250,
+    timeoutlen = 300,
+    confirm = true,
+    laststatus = 3,
+    winborder = 'rounded',
+    inccommand = 'split',
+    list = true,
+    foldlevelstart = 99,
+    foldmethod = 'expr',
+    foldexpr = 'v:lua.vim.treesitter.foldexpr()',
+}, function(k, v) vim.o[k] = v end)
+vim.schedule(function() vim.o.clipboard = 'unnamedplus' end)
 
-vim.opt.rtp:prepend(lazypath)
-vim.opt.maxmempattern = 2000000
-
--- Leader keys
-vim.g.mapleader = " "
-vim.g.maplocalleader = ","
-
--- Basic options
-vim.opt.number = true
-vim.opt.relativenumber = true
-vim.opt.signcolumn = "yes"
-vim.opt.cursorline = true
-
-vim.opt.expandtab = true
-vim.opt.shiftwidth = 2
-vim.opt.tabstop = 2
-vim.opt.smartindent = true
-
-vim.opt.ignorecase = true
-vim.opt.smartcase = true
-
-vim.opt.splitright = true
-vim.opt.splitbelow = true
-
-vim.opt.undofile = true
-vim.opt.updatetime = 250
-vim.opt.timeoutlen = 400
-
-vim.opt.clipboard = "unnamedplus"
-
-vim.opt.termguicolors = true
-vim.opt.background = "light"
-
-vim.opt.foldlevel = 99
-vim.opt.foldlevelstart = 99
-
--- Diagnostics
-vim.diagnostic.config({
-  virtual_text = true,
-  severity_sort = true,
-  float = {
-    source = true,
-  },
+-- 必须在 vim.pack.add 之前注册
+vim.api.nvim_create_autocmd('PackChanged', {
+    callback = function(ev)
+        if ev.data.spec.name == 'nvim-treesitter' and ev.data.kind == 'update' then
+            if not ev.data.active then vim.cmd.packadd('nvim-treesitter') end
+            vim.cmd('TSUpdate')
+        end
+    end,
 })
 
--- Keymaps
-vim.keymap.set("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "Find files" })
-vim.keymap.set("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "Live grep" })
-vim.keymap.set("n", "<leader>e", "<cmd>Oil<cr>", { desc = "File explorer" })
-
-vim.keymap.set("n", "<leader>r", function()
-  local file = vim.fn.expand("%:p")
-  local root = vim.fs.root(0, { "pyproject.toml", ".git" }) or vim.fn.getcwd()
-
-  vim.cmd("botright 12split")
-  vim.cmd("silent update")
-  vim.cmd(
-    "terminal cd "
-      .. vim.fn.shellescape(root)
-      .. " && uv run python "
-      .. vim.fn.shellescape(file)
-  )
-  vim.cmd("startinsert")
-end, { desc = "Run current Python file with uv" })
-
--- LSP helpers
-local lsp_document_highlight_group = vim.api.nvim_create_augroup("LspDocumentHighlight", {
-  clear = true,
+vim.pack.add({
+    { src = gh('rose-pine/neovim'), name = 'rose-pine' },
+    gh('nvim-mini/mini.icons'),
+    gh('folke/which-key.nvim'),
+    gh('nvim-treesitter/nvim-treesitter'),
+    gh('neovim/nvim-lspconfig'),
+    gh('b0o/SchemaStore.nvim'),
+    gh('rafamadriz/friendly-snippets'),
+    { src = gh('saghen/blink.cmp'), version = vim.version.range('1.*') },
+    gh('ibhagwan/fzf-lua'),
+    gh('stevearc/conform.nvim'),
+    gh('stevearc/oil.nvim'),
+    gh('lewis6991/gitsigns.nvim'),
+    gh('esmuellert/codediff.nvim'),
+    gh('MeanderingProgrammer/render-markdown.nvim'),
+    gh('windwp/nvim-autopairs'),
+    gh('GCBallesteros/jupytext.nvim'),
+    -- 不指定 version：跟 master，nvim-dap-view 1.x 需要 on_session
+    gh('mfussenegger/nvim-dap'),
+    gh('mfussenegger/nvim-dap-python'),
+    { src = gh('igorlfs/nvim-dap-view'), version = vim.version.range('1.*') },
 })
 
-local function buf_supports_lsp_method(bufnr, method)
-  for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
-    if client:supports_method(method, bufnr) then
-      return true
-    end
-  end
+require('rose-pine').setup({ variant = 'dawn', dark_variant = 'dawn' })
+vim.cmd.colorscheme('rose-pine-dawn')
 
-  return false
-end
+require('mini.icons').setup()
+MiniIcons.mock_nvim_web_devicons()
 
--- LSP keymaps / per-buffer features
-vim.api.nvim_create_autocmd("LspAttach", {
-  callback = function(event)
-    local opts = { buf = event.buf }
-    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
-    vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
-    vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
-    vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
-    vim.keymap.set("n", "gt", vim.lsp.buf.type_definition, opts)
-    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
-    vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
-    vim.keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts)
-
-    local client = vim.lsp.get_client_by_id(event.data.client_id)
-    if not client then
-      return
-    end
-
-    if client.name == "copilot" then
-      vim.lsp.inline_completion.enable(true, {
-        bufnr = event.buf,
-      })
-
-      vim.keymap.set("i", "<M-l>", function()
-        vim.lsp.inline_completion.get({ bufnr = event.buf })
-        return ""
-      end, {
-        buf = event.buf,
-        expr = true,
-        desc = "Accept Copilot inline completion",
-      })
-
-      vim.keymap.set("i", "<M-]>", function()
-        vim.lsp.inline_completion.select({
-          bufnr = event.buf,
-          count = 1,
-        })
-      end, {
-        buffer = event.buf,
-        desc = "Next Copilot inline completion",
-      })
-
-      vim.keymap.set("i", "<M-[>", function()
-        vim.lsp.inline_completion.select({
-          bufnr = event.buf,
-          count = -1,
-        })
-      end, {
-        buffer = event.buf,
-        desc = "Previous Copilot inline completion",
-      })
-    end
-
-    -- Inlay hints
-    if client:supports_method("textDocument/inlayHint", event.buf) then
-      vim.lsp.inlay_hint.enable(true, { bufnr = event.buf })
-    end
-
-    -- Document highlight:
-    -- 只在当前 buffer 至少有一个 LSP 支持 textDocument/documentHighlight 时注册。
-    -- 这样可以避免 Copilot LSP / 无 LSP buffer 触发 CursorHold 报错。
-    if client:supports_method("textDocument/documentHighlight", event.buf) then
-      vim.api.nvim_clear_autocmds({
-        group = lsp_document_highlight_group,
-        buf = event.buf,
-      })
-      vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-        group = lsp_document_highlight_group,
-        buf = event.buf,
-        callback = function(args)
-          if buf_supports_lsp_method(args.buf, "textDocument/documentHighlight") then
-            vim.lsp.buf.document_highlight()
-          end
-        end,
-      })
-      vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufLeave" }, {
-        group = lsp_document_highlight_group,
-        buffer = event.buf,
-        callback = function()
-          vim.lsp.buf.clear_references()
-        end,
-      })
-    end
-  end,
+require('which-key').setup({
+    spec = {
+        { '<leader>f', group = 'find' },
+        { '<leader>g', group = 'git' },
+        { '<leader>h', group = 'hunk' },
+        { '<leader>d', group = 'debug' },
+        { '<leader>c', group = 'code' },
+        { '<leader>t', group = 'toggle' },
+    },
 })
 
-require("lazy").setup({
-  -- Theme
-  {
-    "rose-pine/neovim",
-    name = "rose-pine",
-    config = function()
-      require("rose-pine").setup({
-        variant = "dawn",
-      })
-      vim.cmd.colorscheme("rose-pine")
+-- treesitter
+require('nvim-treesitter').install({
+    'bash', 'c', 'cpp', 'python', 'lua', 'luadoc', 'vim', 'vimdoc', 'query',
+    'markdown', 'markdown_inline', 'json', 'yaml', 'toml',
+    'diff', 'gitcommit', 'git_config', 'git_rebase', 'regex',
+})
+vim.api.nvim_create_autocmd('FileType', {
+    callback = function(ev)
+        if pcall(vim.treesitter.start, ev.buf) then
+            vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        end
     end,
-  },
+})
 
-  -- UI / productivity
-  { "nvim-tree/nvim-web-devicons" },
-  { "windwp/nvim-autopairs", opts = {} },
-  { "folke/which-key.nvim", opts = {} },
-  { "nvim-lualine/lualine.nvim", opts = {} },
-  { "lewis6991/gitsigns.nvim", opts = {} },
-  { "stevearc/oil.nvim", opts = {} },
-
-  {
-    "nvim-telescope/telescope.nvim",
-    dependencies = {
-      "nvim-lua/plenary.nvim",
+-- lsp
+vim.lsp.config('lua_ls', {
+    settings = {
+        Lua = {
+            runtime = { version = 'LuaJIT' },
+            workspace = { checkThirdParty = false, library = { vim.env.VIMRUNTIME } },
+        },
     },
-    opts = {},
-  },
+})
+vim.lsp.config('jsonls', {
+    settings = { json = { schemas = require('schemastore').json.schemas(), validate = { enable = true } } },
+})
+vim.lsp.config('yamlls', {
+    settings = { yaml = { schemaStore = { enable = false, url = '' }, schemas = require('schemastore').yaml.schemas() } },
+})
+vim.lsp.enable({ 'lua_ls', 'jsonls', 'yamlls', 'tombi', 'ruff', 'ty', 'clangd' })
+vim.lsp.inlay_hint.enable()
+vim.diagnostic.config({ severity_sort = true, virtual_text = true, float = { source = true } })
 
-  {
-    "tpope/vim-fugitive",
-    cmd = {
-      "Git",
-      "G",
-      "Gdiffsplit",
-      "Gread",
-      "Gwrite",
-      "Ggrep",
-      "GMove",
-      "GDelete",
-      "GBrowse",
-    },
-  },
-
-  {
-    "romus204/tree-sitter-manager.nvim",
-    lazy = false,
-    priority = 1000,
-    config = function()
-      require("tree-sitter-manager").setup({
-        parser_dir = vim.fn.stdpath("data") .. "/site/parser",
-        query_dir = vim.fn.stdpath("data") .. "/site/queries",
-
-        ensure_installed = {
-          "rust",
-          "python",
-          "cpp",
-        },
-
-        auto_install = false,
-
-        highlight = {
-          "rust",
-          "python",
-          "cpp",
-        },
-
-        noauto_install = {
-          "c",
-          "lua",
-          "markdown",
-          "markdown_inline",
-          "query",
-          "vim",
-          "vimdoc",
-        },
-
-        nerdfont = true,
-      })
+vim.api.nvim_create_autocmd('LspAttach', {
+    callback = function(ev)
+        local client = vim.lsp.get_client_by_id(ev.data.client_id)
+        -- hover 交给 ty
+        if client and client.name == 'ruff' then client.server_capabilities.hoverProvider = false end
     end,
-  },
+})
 
-  -- Completion
-  {
-    "saghen/blink.cmp",
-    version = "1.*",
-    opts = {
-      keymap = {
-        preset = "super-tab",
-      },
+-- 补全 / 编辑
+require('blink.cmp').setup({
+    keymap = { preset = 'default' },
+    completion = { documentation = { auto_show = true } },
+    signature = { enabled = true },
+    sources = { default = { 'lsp', 'path', 'snippets', 'buffer' } },
+    fuzzy = { implementation = 'prefer_rust_with_warning' },
+})
+require('nvim-autopairs').setup({ check_ts = true })
 
-      completion = {
-        menu = {
-          auto_show = true,
-        },
-
-        list = {
-          selection = {
-            preselect = true,
-            auto_insert = false,
-          },
-        },
-
-        -- 避免 blink 自己的 ghost text 和 LSP inline completion 视觉冲突。
-        ghost_text = {
-          enabled = false,
-        },
-      },
-
-      signature = {
-        enabled = true,
-        window = {
-          show_documentation = false,
-        },
-      },
-
-      sources = {
-        default = {
-          "lsp",
-          "path",
-          "buffer",
-        },
-        providers = {
-          snippets = {
-            enabled = false,
-          },
-        },
-      },
-
-      fuzzy = {
-        implementation = "prefer_rust_with_warning",
-      },
+require('conform').setup({
+    formatters_by_ft = {
+        python = { 'ruff_organize_imports', 'ruff_format' },
+        json = { 'prettier' },
+        jsonc = { 'prettier' },
+        yaml = { 'prettier' },
+        markdown = { 'prettier' },
     },
-    opts_extend = { "sources.default" },
-  },
+    default_format_opts = { lsp_format = 'fallback' },
+    format_on_save = { timeout_ms = 1000 },
+})
+vim.o.formatexpr = "v:lua.require'conform'.formatexpr()"
 
-  -- LSP
-  {
-    "neovim/nvim-lspconfig",
-    dependencies = {
-      "saghen/blink.cmp",
-    },
-    config = function()
-      local capabilities = require("blink.cmp").get_lsp_capabilities()
+require('render-markdown').setup({})
+require('jupytext').setup({ style = 'percent' })
+require('oil').setup({ view_options = { show_hidden = true } })
 
-      vim.lsp.config("clangd", {
-        capabilities = capabilities,
-        cmd = {
-          "clangd",
-          "--background-index",
-          "--clang-tidy",
-          "--completion-style=detailed",
-          "--header-insertion=iwyu",
-          "--compile-commands-dir=build",
-        },
-        root_markers = {
-          "compile_commands.json",
-          "compile_flags.txt",
-          ".clangd",
-          ".git",
-        },
-      })
+local fzf = require('fzf-lua')
+fzf.setup({})
+fzf.register_ui_select()
 
-      vim.lsp.config("pyright", {
-        capabilities = capabilities,
-        settings = {
-          python = {
-            analysis = {
-              typeCheckingMode = "basic",
-              autoSearchPaths = true,
-              useLibraryCodeForTypes = true,
-              diagnosticMode = "workspace",
-            },
-          },
-        },
-      })
-
-      vim.lsp.config("ruff", {
-        capabilities = capabilities,
-      })
-
-      -- Copilot LSP:
-      -- 给 Neovim 原生 inline completion 和 sidekick.nvim NES 使用。
-      vim.lsp.config("copilot", {
-        cmd = {
-          "copilot-language-server",
-          "--stdio",
-        },
-        root_markers = {
-          ".git",
-        },
-        filetypes = {
-          "python",
-          "cpp",
-          "c",
-          "rust",
-          "lua",
-        },
-        init_options = {
-          editorInfo = {
-            name = "Neovim",
-            version = tostring(vim.version()),
-          },
-          editorPluginInfo = {
-            name = "Neovim",
-            version = tostring(vim.version()),
-          },
-        },
-      })
-
-      vim.lsp.enable({
-        "clangd",
-        "pyright",
-        "ruff",
-        "copilot",
-      })
+-- git
+require('gitsigns').setup({
+    on_attach = function(buf)
+        local gs = require('gitsigns')
+        local function nav(dir, key)
+            return function()
+                if vim.wo.diff then vim.cmd.normal({ key, bang = true }) else gs.nav_hunk(dir) end
+            end
+        end
+        local function range(f) return function() f({ vim.fn.line('.'), vim.fn.line('v') }) end end
+        map({
+            { 'n',          ']c',         nav('next', ']c'),                             'Next hunk' },
+            { 'n',          '[c',         nav('prev', '[c'),                             'Prev hunk' },
+            { 'n',          '<leader>hs', gs.stage_hunk,                                 'Stage hunk' },
+            { 'v',          '<leader>hs', range(gs.stage_hunk),                          'Stage hunk' },
+            { 'n',          '<leader>hr', gs.reset_hunk,                                 'Reset hunk' },
+            { 'v',          '<leader>hr', range(gs.reset_hunk),                          'Reset hunk' },
+            { 'n',          '<leader>hS', gs.stage_buffer,                               'Stage buffer' },
+            { 'n',          '<leader>hR', gs.reset_buffer,                               'Reset buffer' },
+            { 'n',          '<leader>hp', gs.preview_hunk,                               'Preview hunk' },
+            { 'n',          '<leader>hi', gs.preview_hunk_inline,                        'Preview hunk inline' },
+            { 'n',          '<leader>hb', function() gs.blame_line({ full = true }) end, 'Blame line' },
+            { 'n',          '<leader>hB', gs.blame,                                      'Blame buffer' },
+            { 'n',          '<leader>hd', gs.diffthis,                                   'Diff this' },
+            { 'n',          '<leader>hq', gs.setqflist,                                  'Hunks to quickfix' },
+            { 'n',          '<leader>tb', gs.toggle_current_line_blame,                  'Toggle line blame' },
+            { 'n',          '<leader>tw', gs.toggle_word_diff,                           'Toggle word diff' },
+            { { 'o', 'x' }, 'ih',         gs.select_hunk,                                'Hunk' },
+        }, { buffer = buf })
     end,
-  },
+})
 
-  -- Formatter
-  {
-    "stevearc/conform.nvim",
-    opts = {
-      notify_on_error = true,
-      notify_no_formatters = false,
+-- dap
+local dap = require('dap')
+require('dap-view').setup({ auto_toggle = true })
+require('dap-python').setup('uv')
+dap.adapters.native = vim.fn.has('mac') == 1
+    and { type = 'executable', command = 'xcrun', args = { 'lldb-dap' } }
+    or { type = 'executable', command = 'gdb', args = { '--interpreter=dap', '--eval-command', 'set print pretty on' } }
+each({ 'c', 'cpp' }, function(ft)
+    dap.configurations[ft] = {
+        { name = 'Launch', type = 'native', request = 'launch', program = '${command:pickFile}', cwd = '${workspaceFolder}' },
+    }
+end)
+vim.fn.sign_define('DapBreakpoint', { text = '●', texthl = 'DiagnosticError' })
 
-      format_on_save = {
-        timeout_ms = 1000,
-        lsp_format = "fallback",
-      },
+-- keymaps
+map({
+    { 'n',          '<Esc>',           '<cmd>nohlsearch<cr>' },
+    { 'n',          '<C-h>',           '<C-w>h',                                                                      'Window left' },
+    { 'n',          '<C-j>',           '<C-w>j',                                                                      'Window down' },
+    { 'n',          '<C-k>',           '<C-w>k',                                                                      'Window up' },
+    { 'n',          '<C-l>',           '<C-w>l',                                                                      'Window right' },
+    { 'n',          '-',               '<cmd>Oil<cr>',                                                                'Parent directory' },
 
-      formatters_by_ft = {
-        c = { "clang_format" },
-        cpp = { "clang_format" },
-        python = {
-          "ruff_organize_imports",
-          "ruff_format",
-        },
-        json = { "prettier" },
-      },
+    { 'n',          '<leader><space>', fzf.files,                                                                     'Files' },
+    { 'n',          '<leader>/',       fzf.live_grep,                                                                 'Grep' },
+    { 'n',          '<leader>ff',      fzf.files,                                                                     'Files' },
+    { 'n',          '<leader>fg',      fzf.live_grep,                                                                 'Grep' },
+    { { 'n', 'x' }, '<leader>fw',      fzf.grep_cword,                                                                'Grep word' },
+    { 'n',          '<leader>fb',      fzf.buffers,                                                                   'Buffers' },
+    { 'n',          '<leader>fr',      fzf.oldfiles,                                                                  'Recent' },
+    { 'n',          '<leader>fh',      fzf.helptags,                                                                  'Help' },
+    { 'n',          '<leader>fk',      fzf.keymaps,                                                                   'Keymaps' },
+    { 'n',          '<leader>fd',      fzf.diagnostics_document,                                                      'Diagnostics' },
+    { 'n',          '<leader>fD',      fzf.diagnostics_workspace,                                                     'Workspace diagnostics' },
+    { 'n',          '<leader>fs',      fzf.lsp_document_symbols,                                                      'Symbols' },
+    { 'n',          '<leader>fS',      fzf.lsp_live_workspace_symbols,                                                'Workspace symbols' },
+    { 'n',          '<leader>f.',      fzf.resume,                                                                    'Resume' },
 
-      formatters = {
-        prettier = {
-          options = {
-            ft_parsers = {
-              json = "json",
-            },
-            ext_parsers = {
-              xcs = "json",
-            },
-          },
-        },
-      },
-    },
+    { 'n',          'gd',              fzf.lsp_definitions,                                                           'Definition' },
+    { 'n',          'gD',              vim.lsp.buf.declaration,                                                       'Declaration' },
+    { { 'n', 'x' }, '<leader>cf',      function() require('conform').format() end,                                    'Format' },
+    { 'n',          '<leader>th',      function() vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled()) end, 'Toggle inlay hints' },
 
-    init = function()
-      vim.filetype.add({
-        extension = {
-          xcs = "json",
-        },
-      })
-    end,
-  },
+    { 'n',          '<leader>gd',      '<cmd>CodeDiff<cr>',                                                           'Changes (VSCode diff)' },
+    { 'n',          '<leader>gh',      '<cmd>CodeDiff history<cr>',                                                   'Repo history' },
+    { 'n',          '<leader>gf',      '<cmd>CodeDiff history %<cr>',                                                 'File history' },
+    { 'n',          '<leader>gs',      fzf.git_status,                                                                'Status' },
+    { 'n',          '<leader>gc',      fzf.git_commits,                                                               'Commits' },
+    { 'n',          '<leader>gC',      fzf.git_bcommits,                                                              'Buffer commits' },
+    { 'n',          '<leader>gb',      fzf.git_branches,                                                              'Branches' },
 
-  -- DAP
-  {
-    "mfussenegger/nvim-dap",
-  },
-
-  {
-    "mfussenegger/nvim-dap-python",
-    dependencies = {
-      "mfussenegger/nvim-dap",
-    },
-    config = function()
-      local debugpy = vim.fn.exepath("debugpy-adapter")
-      if debugpy ~= "" then
-        require("dap-python").setup(debugpy)
-      else
-        vim.notify("debugpy-adapter not found. Run: uv tool install debugpy", vim.log.levels.WARN)
-      end
-    end,
-  },
-
-  {
-    "iamcco/markdown-preview.nvim",
-    cmd = { "MarkdownPreviewToggle", "MarkdownPreview", "MarkdownPreviewStop" },
-    build = "cd app && npm install && (git restore yarn.lock 2>/dev/null || rm -f yarn.lock)",
-    init = function()
-      vim.g.mkdp_filetypes = { "markdown" }
-    end,
-    ft = { "markdown" },
-  },
-  {
-    "goerz/jupytext.nvim",
-    version = "0.2.0",
-    opts = {
-      format = "py:percent",
-      update = true,
-      autosync = true,
-    },
-  },
-
-  -- AI / NES
-  {
-    "folke/sidekick.nvim",
-    event = {
-      "BufReadPost",
-      "BufNewFile",
-    },
-    opts = {
-      nes = {
-        debounce = 800,
-
-        trigger = {
-          events = { "ModeChanged i:n", "TextChanged", "User SidekickNesDone" }
-        },
-
-        enabled = function(buf)
-          local enabled_filetypes = {
-            python = true,
-            cpp = true,
-            c = true,
-            rust = true,
-            lua = true,
-          }
-
-          return vim.g.sidekick_nes ~= false
-            and vim.b[buf].sidekick_nes ~= false
-            and enabled_filetypes[vim.bo[buf].filetype] == true
-        end,
-
-        diff = {
-          inline = "words",
-          show = "always",
-        },
-
-        signs = false,
-        jumplist = false,
-      },
-
-      cli = {
-        picker = "telescope",
-      },
-    },
-    keys = {
-      {
-        "<leader>nj",
-        function()
-          require("sidekick.nes").jump()
-        end,
-        desc = "Jump to Next Edit Suggestion",
-      },
-      {
-        "<leader>na",
-        function()
-          require("sidekick.nes").apply()
-        end,
-        desc = "Apply Next Edit Suggestion",
-      },
-      {
-        "<leader>nu",
-        function()
-          require("sidekick.nes").update()
-        end,
-        desc = "Update Next Edit Suggestion",
-      },
-      {
-        "<leader>nd",
-        function()
-          require("sidekick.nes").clear()
-        end,
-        desc = "Dismiss Next Edit Suggestion",
-      },
-      {
-        "<leader>nt",
-        function()
-          require("sidekick.nes").toggle()
-        end,
-        desc = "Toggle Next Edit Suggestion",
-      },
-    },
-  },
-}, {
-  git = {
-    timeout = 300,
-  },
+    { 'n',          '<F5>',            dap.continue,                                                                  'Debug: continue' },
+    { 'n',          '<F9>',            dap.toggle_breakpoint,                                                         'Debug: breakpoint' },
+    { 'n',          '<F10>',           dap.step_over,                                                                 'Debug: step over' },
+    { 'n',          '<F11>',           dap.step_into,                                                                 'Debug: step into' },
+    { 'n',          '<leader>dc',      dap.continue,                                                                  'Continue' },
+    { 'n',          '<leader>db',      dap.toggle_breakpoint,                                                         'Breakpoint' },
+    { 'n',          '<leader>dB',      function() dap.set_breakpoint(vim.fn.input('Condition: ')) end,                'Conditional breakpoint' },
+    { 'n',          '<leader>di',      dap.step_into,                                                                 'Step into' },
+    { 'n',          '<leader>dO',      dap.step_over,                                                                 'Step over' },
+    { 'n',          '<leader>do',      dap.step_out,                                                                  'Step out' },
+    { 'n',          '<leader>dt',      dap.terminate,                                                                 'Terminate' },
+    { 'n',          '<leader>dr',      dap.repl.toggle,                                                               'REPL' },
+    { 'n',          '<leader>du',      function() require('dap-view').toggle() end,                                   'Debug view' },
+    { 'n',          '<leader>dm',      function() require('dap-python').test_method() end,                            'Debug test method' },
 })
