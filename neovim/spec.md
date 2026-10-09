@@ -18,7 +18,7 @@
 # 偏好
 
 - 50%主流 + 20%轻量 + 20%前卫 + 10%原生
-- <leader>用空格键
+- <leader>用空格键，<localleader>习惯服从主流，不用F键调试
 - 向kickstart.nvim的习惯靠近
 
 # 依赖
@@ -49,7 +49,7 @@
 - 插件管理：vim.pack
 - 代码补全：blink.cmp
 - 模糊查找: fzf-lua
-- 格式化：conform.nvim
+- 格式化：conform.nvim, biome
 - 文件管理：oil.nvim
 - git: gitsigns.nvim, codediff.nvim, 提交走命令行
 - lsp: nvim-lspconfig
@@ -59,5 +59,9 @@
 # 注意点
 
 - 核对最新情况，如treesitter被archive后unarchive，重新成为最佳选择
-- 2025 年 3 月，之后 nvim-dap 一直没再发版。nvim-dap-view 1.x 用到了 dap.listeners.on_session，这个接口只在 nvim-dap 的 master 分支上有，0.10.0 里没有。
+- 2025 年 3 月，之后 nvim-dap 一直没再发版。nvim-dap-view 1.x 用到了 dap.listeners.on_session，这个接口只在 nvim-dap 的 master 分支上有，0.10.0 里没有。nvim-dap-view 自带 REPL。
+- blink.cmp的默认值不要重复设定
+- 仔细思考rose-pine-dawn + light要如何设置好且只设置必要的。比如colorscheme() 函数包含 termguicolors = true
+- codediff有的功能，不要设置其他插件的快捷键。
+- 不要which-key，有问题我直接问ai
 - 有不确定的，继续问我
