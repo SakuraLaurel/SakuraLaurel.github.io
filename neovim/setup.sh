@@ -1,50 +1,55 @@
-# macOS: zsh setup.sh    Kubuntu: bash setup.sh
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-here=$(cd "$(dirname "$0")" && pwd)
-bin="$HOME/.local/bin"
+have() { command -v "$1" >/dev/null 2>&1; }
+latest_tag() { curl -fsSLo /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest" | sed 's#.*/##'; }
 
-gh_latest() { curl -fsSL "https://github.com/$1/releases/latest/download/$2"; }
-gh_tag() { basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest")"; }
-
-mac() {
-  brew install fzf ripgrep fd tree-sitter-cli lua-language-server
-  brew install --cask font-symbols-only-nerd-font
+macos() {
+  # clang / lldb / lldb-dap 来自 Command Line Tools；GUI 安装完成后重跑
+  xcode-select -p >/dev/null 2>&1 || { xcode-select --install; exit 1; }
+  brew install fzf fd ripgrep tree-sitter-cli lua-language-server
+  brew install --cask font-jetbrains-mono-nerd-font
 }
 
 kubuntu() {
-  local arch tag dir fonts
   arch=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')
+  bin="$HOME/.local/bin"
   sudo apt-get update
-  sudo apt-get install -y curl xz-utils fontconfig fzf ripgrep fd-find wl-clipboard
-  ln -sf "$(command -v fdfind)" "$bin/fd"
+  sudo apt-get install -y build-essential gdb curl fzf fd-find ripgrep wl-clipboard
+  mkdir -p "$bin"
 
-  # apt 的 tree-sitter 是 0.25，nvim-treesitter main 需要 ≥0.26.1
-  gh_latest tree-sitter/tree-sitter "tree-sitter-linux-$arch.gz" | gunzip > "$bin/tree-sitter"
-  chmod +x "$bin/tree-sitter"
+  # apt 里的 tree-sitter-cli 低于 nvim-treesitter 要求的 0.26.1
+  have tree-sitter || {
+    curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-$arch.gz" | gunzip >"$bin/tree-sitter"
+    chmod +x "$bin/tree-sitter"
+  }
 
-  tag=$(gh_tag LuaLS/lua-language-server)
-  dir="$HOME/.local/share/lua-language-server"
-  rm -rf "$dir" && mkdir -p "$dir"
-  curl -fsSL "https://github.com/LuaLS/lua-language-server/releases/download/$tag/lua-language-server-$tag-linux-$arch.tar.gz" | tar xz -C "$dir"
-  printf '#!/bin/sh\nexec "%s/bin/lua-language-server" "$@"\n' "$dir" > "$bin/lua-language-server"
-  chmod +x "$bin/lua-language-server"
+  have lua-language-server || {
+    tag=$(latest_tag LuaLS/lua-language-server)
+    dir="$HOME/.local/share/lua-language-server"
+    mkdir -p "$dir"
+    curl -fsSL "https://github.com/LuaLS/lua-language-server/releases/download/$tag/lua-language-server-$tag-linux-$arch.tar.gz" | tar xz -C "$dir"
+    printf '#!/bin/sh\nexec "%s/bin/lua-language-server" "$@"\n' "$dir" >"$bin/lua-language-server"
+    chmod +x "$bin/lua-language-server"
+  }
 
-  fonts="$HOME/.local/share/fonts/NerdFontsSymbolsOnly"
-  mkdir -p "$fonts"
-  gh_latest ryanoasis/nerd-fonts NerdFontsSymbolsOnly.tar.xz | tar xJ -C "$fonts"
-  fc-cache -f "$fonts"
+  font="$HOME/.local/share/fonts/JetBrainsMonoNerdFont"
+  [ -f "$font/JetBrainsMonoNerdFontMono-Regular.ttf" ] || {
+    mkdir -p "$font"
+    curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz | tar xJ -C "$font"
+    fc-cache -f
+  }
 }
 
-tools() {
-  uv tool install --upgrade tombi
-  uv tool install --upgrade jupytext
-  npm install -g --prefix "$HOME/.local" vscode-langservers-extracted yaml-language-server prettier
+common() {
+  uv tool install tombi
+  uv tool install rumdl
+  uv tool install jupytext
+  npm install -g vscode-langservers-extracted @biomejs/biome
 }
 
-mkdir -p "$bin"
 case "$(uname -s)" in
-  Darwin) mac ;;
+  Darwin) macos ;;
   Linux) kubuntu ;;
 esac
-tools
+common
